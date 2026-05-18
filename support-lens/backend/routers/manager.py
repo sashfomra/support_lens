@@ -187,8 +187,24 @@ def get_clusters(db: Session = Depends(get_db)):
     return db.query(IssueCluster).order_by(IssueCluster.ticket_count.desc()).all()
 
 
+@router.get("/alerts")
+def get_manager_alerts():
+    """Returns current spike alerts from the in-memory alerter store."""
+    from spike_alerter import get_alerts
+    return get_alerts()
+
+
+@router.delete("/alerts/{alert_id}")
+def dismiss_manager_alert(alert_id: str):
+    """Dismiss a spike alert by ID."""
+    from spike_alerter import dismiss_alert
+    dismiss_alert(alert_id)
+    return {"dismissed": True}
+
+
 @router.get("/agents/stats")
 def get_agent_stats(db: Session = Depends(get_db)):
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     week_ago = now - timedelta(days=7)
     agents = {}

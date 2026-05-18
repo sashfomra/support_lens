@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getDashboard, askManager, getClusters, getAgentStats, getHeatmap, getSLABreakdown, getCSATForecast } from '../api/client'
+import { getDashboard, askManager, getClusters, getAgentStats, getHeatmap, getSLABreakdown, getCSATForecast, getManagerAlerts, dismissAlert } from '../api/client'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler } from 'chart.js'
 import { Line, Bar, Doughnut } from 'react-chartjs-2'
 
@@ -237,6 +237,7 @@ export default function ManagerDashboard() {
   const [heatmap, setHeatmap] = useState(null)
   const [sla, setSla] = useState(null)
   const [csat, setCsat] = useState(null)
+  const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -244,6 +245,12 @@ export default function ManagerDashboard() {
       .then(([s,a,c,h,sl,cs]) => { setStats(s.data); setAgents(a.data); setClusters(c.data); setHeatmap(h.data); setSla(sl.data); setCsat(cs.data) })
       .catch(console.error)
       .finally(() => setLoading(false))
+
+    // Poll for spike alerts every 30s
+    const pollAlerts = () => getManagerAlerts().then(r => setAlerts(r.data)).catch(() => {})
+    pollAlerts()
+    const alertTimer = setInterval(pollAlerts, 30000)
+    return () => clearInterval(alertTimer)
   }, [])
 
   if (loading) return <div className="empty" style={{paddingTop:140}}><div className="spinner" style={{width:44,height:44,margin:'0 auto 16px'}}/><div style={{color:'var(--text2)'}}>Loading dashboard…</div></div>
@@ -261,6 +268,27 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="page-body">
+        {/* Spike Alerts */}
+        {alerts.length > 0 && (
+          <div style={{ marginBottom:18 }}>
+            {alerts.map(a => (
+              <div key={a.id} style={{ background: a.severity==='critical'?'rgba(244,63,94,0.1)':'rgba(245,158,11,0.1)', border:`1px solid ${a.severity==='critical'?'rgba(244,63,94,0.4)':'rgba(245,158,11,0.4)'}`, borderRadius:11, padding:'13px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:14, marginBottom:8 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <span style={{ fontSize:'1.4rem' }}>{a.severity==='critical'?'🚨':'⚠️'}</span>
+                  <div>
+                    <div style={{ fontWeight:700, color: a.severity==='critical'?'var(--red)':'var(--amber)', fontSize:'0.9rem' }}>
+                      {a.category} tickets spiked {a.spike_pct}%
+                    </div>
+                    <div style={{ fontSize:'0.8rem', color:'var(--text2)', marginTop:2 }}>
+                      {a.count_30m} tickets in last 30 min vs {a.avg_hourly}/hr average · {new Date(a.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => { dismissAlert(a.id); setAlerts(p => p.filter(x => x.id !== a.id)) }} style={{ flexShrink:0, fontSize:'1rem', padding:'4px 8px' }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
         {stats && (
           <div className="stats-row">
             {[

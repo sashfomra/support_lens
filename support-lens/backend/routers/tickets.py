@@ -24,9 +24,27 @@ async def create_ticket(payload: TicketCreate, background_tasks: BackgroundTasks
         assigned_agent_id=payload.assigned_agent_id,
         assigned_agent_name=payload.assigned_agent_name,
     )
+
+    # Duplicate detection before saving
+    try:
+        from ai.duplicate_detector import check_duplicate, index_ticket as idx_ticket
+        dup = check_duplicate(payload.subject, payload.description)
+        if dup:
+            ticket.duplicate_of_id = dup[0]
+            ticket.duplicate_similarity = dup[1]
+    except Exception:
+        pass
+
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+
+    # Index this ticket for future duplicate checks
+    try:
+        from ai.duplicate_detector import index_ticket as idx_ticket
+        background_tasks.add_task(idx_ticket, ticket.id, payload.subject, payload.description)
+    except Exception:
+        pass
 
     # Run AI pipeline in background (non-blocking for fast response)
     background_tasks.add_task(_enrich_ticket, ticket.id, payload.subject, payload.description, payload.customer_tier)
@@ -85,9 +103,11 @@ async def create_ticket_sync(payload: TicketCreate, db: Session = Depends(get_db
 @router.get("/", response_model=List[TicketOut])
 def list_tickets(
     status: Optional[str] = None,
+    source: Optional[str] = None,
     intent: Optional[str] = None,
     emotion_type: Optional[str] = None,
     customer_tier: Optional[str] = None,
+    customer_email: Optional[str] = None,
     is_churn_risk: Optional[bool] = None,
     sort_by: str = Query("urgency_score", enum=["urgency_score", "created_at", "emotion_score"]),
     limit: int = 50,
@@ -97,8 +117,12 @@ def list_tickets(
     q = db.query(Ticket)
     if status:
         q = q.filter(Ticket.status == status)
+    if source:
+        q = q.filter(Ticket.source == source)
     if intent:
         q = q.filter(Ticket.intent == intent)
+    if customer_email:
+        q = q.filter(Ticket.customer_email == customer_email)
     if emotion_type:
         q = q.filter(Ticket.emotion_type == emotion_type)
     if customer_tier:

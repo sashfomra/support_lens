@@ -47,6 +47,11 @@ class Ticket(Base):
     is_escalated = Column(Boolean, default=False)
     requires_human = Column(Boolean, default=False)
 
+    # Duplicate detection
+    duplicate_of_id = Column(Integer, nullable=True)          # ID of the original ticket
+    duplicate_similarity = Column(Float, nullable=True)        # 0.0–1.0 similarity score
+
+
     # AI-generated content
     ai_summary = Column(Text, nullable=True)         # 3-line summary
     ai_draft_reply = Column(Text, nullable=True)

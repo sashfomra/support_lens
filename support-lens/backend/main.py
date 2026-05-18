@@ -24,6 +24,8 @@ from routers import tickets as tickets_router
 from routers import manager as manager_router
 from routers import insights as insights_router
 from routers import solution as solution_router
+from routers import voice as voice_router
+from routers import ingest as ingest_router
 from ai import rag_engine as rag
 from ai import ollama_client as llm
 from models import HealthResponse
@@ -59,6 +61,14 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # Start spike alerter scheduler
+    try:
+        from spike_alerter import start_scheduler
+        start_scheduler()
+        print("Spike alerter started.")
+    except Exception as e:
+        print(f"Spike alerter startup error (non-fatal): {e}")
+
     print("SupportLens ready.")
     yield
     print("SupportLens shutting down.")
@@ -83,6 +93,8 @@ app.include_router(tickets_router.router)
 app.include_router(manager_router.router)
 app.include_router(insights_router.router)
 app.include_router(solution_router.router)
+app.include_router(voice_router.router)
+app.include_router(ingest_router.router)
 
 
 @app.get("/health", response_model=HealthResponse)

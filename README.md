@@ -41,20 +41,36 @@ We have created one-click installers at the root:
 *   **Intelligent Prioritization**: A live queue sorted by a compound, weighted **Urgency Score (0-100)** calculated using customer tier, intent (e.g., churn or billing issues), and real-time SLA deadlines.
 *   **Live Countdown Timers**: Dynamic, visual SLA timers that update in real-time.
 *   **Emotion Intensity Detection**: Analyzes customer frustration levels on a scale of `1-10` with emotional tagging.
+*   **3-Line Auto-Summaries**: AI automatically extracts a quick 3-bullet summary for long, rambling complaints to save agents reading time.
 
-### ✉️ 2. One-Click Native Mail Client Connector
+### 🔄 2. Customer 360 & Sentiment Trend History
+*   **Deep Customer Context**: Automatically fetches and displays the customer's entire historical ticket timeline in the agent view.
+*   **Visual Sentiment Journey**: Renders an emoji-based trendline showing how the customer's emotion has degraded or improved across past interactions.
+*   **High Friction Account Flag**: Automatically alerts agents if a user is chronically frustrated based on their historical average sentiment.
+
+### 🌍 3. Omni-Channel Automated Ingestion
+*   **Voice-to-Ticket Pipeline**: Agents can upload audio complaints. Whisper transcribes the audio, and Groq-powered extraction automatically pulls out the customer's name, email, and auto-generates a subject line.
+*   **App Store Scraper**: Automatically pulls 1-2 star reviews from the Apple App Store and Google Play Store and converts them into actionable support tickets.
+*   **Reddit Community Scraper**: Monitors specific subreddits (e.g., `r/stripe`, `r/softwaregore`) for bug reports and complaints, pulling them directly into the agent queue.
+*   **Email Integration**: IMAP scraper to ingest traditional email queries.
+
+### ✉️ 4. One-Click Native Mail Client Connector
 *   **Seamless Hand-off**: Integrated a customized `mailto:` anchor. When agents hit **"Open in Mail Client"**, it launches their native system mail client (Outlook, Apple Mail, Gmail).
 *   **Metadata Auto-Population**: Pre-fills the **To:** address with the customer's exact email, sets the subject to `Re: [Ticket Subject]`, and embeds the custom AI-grounded draft reply into the body instantly.
 
-### 🧠 3. Live Web-Scraped RAG Engine (Stripe Integration)
-*   **No General-Knowledge Hallucinations**: Standard RAG approaches suffer when documentation changes. We built an automated Playwright-based scraper (`ingest_docs.py`) that indexes live, public documentation pages directly into a local **ChromaDB vector store**.
+### 🧠 5. RAG-Powered Resolution & Community Solutions
+*   **Scraped Community Answers**: If internal docs fail, the AI engine dynamically searches Reddit for highly upvoted community fixes (e.g., a known Stripe webhook issue) and integrates the solution into the draft reply.
+*   **Live Web-Scraped RAG Engine**: An automated Playwright-based scraper (`ingest_docs.py`) that indexes live, public documentation pages directly into a local **ChromaDB vector store**.
 *   **Dynamic Source Citing**: Grounded replies cite the exact web URL scraped at the bottom of the response card with a visual green confidence indicator.
 
-### 📊 4. Manager Dashboard & Analytics
+### 🚨 6. Proactive Manager Insights (Spike Alerter)
+*   **Real-Time Spike Detection**: A background chron job (APScheduler) continuously analyzes ticket volume by product area.
+*   **Anomaly Alerts**: Compares the last 30 minutes of incoming tickets against a 7-day historical baseline. If volume spikes beyond 2x the normal rate, a critical alert is instantly pushed to the Manager Dashboard warning of a potential viral issue or system outage.
+
+### 📊 7. Manager Dashboard & Analytics
 *   **Hourly Issue Heatmaps**: 7-day x 24-hour visual grids identifying hourly ticketing volume.
 *   **SLA Trackers**: Visual breakdowns of Safe vs. At-Risk vs. Breached tickets, segmented per agent.
-*   **CSAT Forecasts**: High-level sentiment predictive index factoring in active escalations and historical performance.
-*   **Manager Q&A Bot**: An AI-powered assistant allowing managers to query complex statistics in plain English (e.g., *"Why did CSAT drop this week?"* or *"Who is our busiest agent?"*).
+*   **Manager Q&A Bot**: An AI-powered assistant allowing managers to query complex statistics in plain English.
 
 ---
 

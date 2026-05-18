@@ -50,6 +50,10 @@ class TicketOut(BaseModel):
     is_escalated: bool
     requires_human: bool
 
+    # Duplicate detection
+    duplicate_of_id: Optional[int] = None
+    duplicate_similarity: Optional[float] = None
+
     # AI content
     ai_summary: Optional[str] = None
     ai_draft_reply: Optional[str] = None

@@ -1,10 +1,10 @@
-import { useState } from 'react'
-import { createTicketSync } from '../api/client'
+import { useState, useRef } from 'react'
+import { createTicketSync, transcribeAudio } from '../api/client'
 
 const SAMPLES = [
   { subject:"Payment keeps failing — charged twice", description:"I've tried to renew 3 times, payment fails each time but my bank shows 2 charges of $49. Order ORD-88291. This is unacceptable — fix this NOW!", customer_name:"Jennifer Walsh", customer_email:"j.walsh@example.com", customer_tier:"premium" },
   { subject:"Switching to competitor unless you match their price", description:"Been a customer 2 years but just got an offer 30% cheaper from a competitor. Unless you match it I'm cancelling next month. Last chance to keep my business.", customer_name:"Robert Chen", customer_email:"rchen@business.com", customer_tier:"standard" },
-  { subject:"App crashes on every launch — entire team affected", description:"Since your update yesterday the Android app crashes immediately on open. Android 14, app v4.2.1. Cleared cache, reinstalled 3x. My whole team of 15 is blocked — we're enterprise paying for reliability!", customer_name:"Sandra O'Connor", customer_email:"soconnor@bigcorp.com", customer_tier:"enterprise" },
+  { subject:"App crashes on every launch — entire team affected", description:"Since your update yesterday the Android app crashes immediately on open. Android 14, app v4.2.1. Cleared cache, reinstalled 3x. My whole team of 15 is blocked!", customer_name:"Sandra O'Connor", customer_email:"soconnor@bigcorp.com", customer_tier:"enterprise" },
   { subject:"How do I export all my ticket history?", description:"Hi, I need to export all ticket history to CSV for a quarterly audit. I've checked Settings but can't find the export option. No rush, just need it sometime this week.", customer_name:"Mark Johnson", customer_email:"mark.j@company.org", customer_tier:"standard" },
 ]
 
@@ -42,6 +42,19 @@ function ResultPanel({ r }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Duplicate warning */}
+      {r.duplicate_of_id && (
+        <div style={{ background:'rgba(245,158,11,0.12)', border:'1px solid rgba(245,158,11,0.4)', borderRadius:10, padding:'11px 15px', display:'flex', alignItems:'center', gap:10 }}>
+          <span style={{ fontSize:'1.2rem' }}>🔁</span>
+          <div>
+            <div style={{ fontWeight:700, color:'var(--amber)', fontSize:'0.88rem' }}>Possible Duplicate Detected</div>
+            <div style={{ fontSize:'0.81rem', color:'var(--text2)', marginTop:3 }}>
+              This ticket is <strong>{Math.round((r.duplicate_similarity||0)*100)}% similar</strong> to Ticket #{r.duplicate_of_id}. Review before processing.
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="ai-panel">
         <div className="ai-hd"><span className="ai-pulse"/>AI Pipeline Complete</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, textAlign:'center' }}>
@@ -99,13 +112,50 @@ function ResultPanel({ r }) {
 }
 
 export default function TicketInbox() {
-  const [form, setForm] = useState({ subject:'', description:'', customer_name:'', customer_email:'', customer_tier:'standard' })
+  const [form, setForm] = useState({ subject:'', description:'', customer_name:'', customer_email:'', customer_tier:'standard', source:'web' })
   const [processing, setProcessing] = useState(false)
   const [step, setStep] = useState(-1)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [transcribing, setTranscribing] = useState(false)
+  const [transcriptInfo, setTranscriptInfo] = useState(null)
+  const fileRef = useRef(null)
 
-  const loadSample = (s) => { setForm({ ...s }); setResult(null); setError(null); setStep(-1) }
+  const loadSample = (s) => { setForm({ ...s, source: s.source || 'web' }); setResult(null); setError(null); setStep(-1) }
+
+  const handleVoiceUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setTranscribing(true)
+    setTranscriptInfo(null)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await transcribeAudio(fd)
+      const { transcript, chars, suggested_subject, suggested_name, suggested_email } = res.data
+
+      setForm(prev => ({
+        ...prev,
+        description: transcript,
+        subject: suggested_subject || transcript.slice(0, 80).trim(),
+        customer_name: suggested_name || prev.customer_name,
+        customer_email: suggested_email || prev.customer_email,
+        source: 'voice',   // ← tag as voice ticket
+      }))
+      setTranscriptInfo({
+        filename: file.name,
+        chars,
+        name: suggested_name,
+        email: suggested_email,
+        subject: suggested_subject,
+      })
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Transcription failed — is Whisper installed? (pip install openai-whisper)')
+    }
+    setTranscribing(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -147,13 +197,46 @@ export default function TicketInbox() {
 
             <form className="card" onSubmit={submit}>
               <div className="card-hd"><span className="card-hd-dot"/>Ticket Details</div>
+
+              {/* Voice Upload */}
+              <div style={{ background:'var(--bg4)', border:'1px dashed var(--border2)', borderRadius:10, padding:'13px 16px', marginBottom:14 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:'0.85rem' }}>🎙️ Voice Note Transcription</div>
+                    <div style={{ fontSize:'0.76rem', color:'var(--text3)', marginTop:2 }}>Upload audio → Whisper AI transcribes → auto-fills form</div>
+                  </div>
+                  <div>
+                    <input ref={fileRef} type="file" id="voice-upload" accept=".mp3,.wav,.ogg,.m4a,.webm,.flac" style={{ display:'none' }} onChange={handleVoiceUpload} />
+                    <label htmlFor="voice-upload" className="btn btn-secondary btn-sm" style={{ cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, opacity: transcribing ? 0.6 : 1 }}>
+                      {transcribing ? <><span className="spinner" style={{width:13,height:13}}/>Transcribing…</> : '🎤 Upload Audio'}
+                    </label>
+                  </div>
+                </div>
+                {transcriptInfo && (
+                  <div style={{ fontSize:'0.78rem', marginTop:8, display:'flex', flexDirection:'column', gap:4 }}>
+                    <div style={{ color:'var(--green)', display:'flex', alignItems:'center', gap:6 }}>
+                      ✓ Transcribed <strong>{transcriptInfo.filename}</strong> → {transcriptInfo.chars} chars
+                    </div>
+                    {transcriptInfo.name && (
+                      <div style={{ color:'var(--text2)' }}>👤 Name detected: <strong style={{color:'var(--blue)'}}>{transcriptInfo.name}</strong></div>
+                    )}
+                    {transcriptInfo.email && (
+                      <div style={{ color:'var(--text2)' }}>📧 Email detected: <strong style={{color:'var(--blue)'}}>{transcriptInfo.email}</strong></div>
+                    )}
+                    {transcriptInfo.subject && (
+                      <div style={{ color:'var(--text2)' }}>📌 Subject: <strong style={{color:'var(--blue)'}}>{transcriptInfo.subject}</strong></div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="form-group">
                 <label className="form-label">Subject *</label>
                 <input className="input" required value={form.subject} onChange={e=>setForm({...form,subject:e.target.value})} placeholder="Brief issue description…" />
               </div>
               <div className="form-group">
                 <label className="form-label">Customer Message *</label>
-                <textarea className="textarea" required style={{minHeight:130}} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Paste the full customer message — include frustration, urgency, account info…" />
+                <textarea className="textarea" required style={{minHeight:130}} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Paste the full customer message or upload a voice note above…" />
               </div>
               <div className="grid-2" style={{ gap:10 }}>
                 <div className="form-group" style={{margin:0}}>

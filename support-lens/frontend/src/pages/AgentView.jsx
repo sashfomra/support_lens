@@ -27,6 +27,60 @@ function SLATimer({ deadline, breached }) {
   return <span className={`sla ${cls}`}>{txt}</span>
 }
 
+function Customer360({ email, currentTicketId }) {
+  const [history, setHistory] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!email) return
+    getTickets({ customer_email: email, sort_by: 'created_at', limit: 10 })
+      .then(r => {
+        // filter out current ticket and sort oldest to newest for trend
+        const past = r.data.filter(t => t.id !== currentTicketId).sort((a,b) => new Date(a.created_at) - new Date(b.created_at))
+        setHistory(past)
+      })
+      .finally(() => setLoading(false))
+  }, [email, currentTicketId])
+
+  if (loading) return <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>Loading Customer 360...</div>
+  if (history.length === 0) return <div style={{ fontSize: '0.8rem', color: 'var(--text2)', fontStyle: 'italic' }}>🌟 First time interacting with support.</div>
+
+  const avgSentiment = history.reduce((sum, t) => sum + (t.emotion_score || 5), 0) / history.length
+  const isChronicallyFrustrated = avgSentiment > 7 // higher score means worse emotion in this app
+
+  return (
+    <div className="ai-panel" style={{ background: 'var(--bg3)', borderColor: isChronicallyFrustrated ? 'var(--red-dim)' : 'var(--border2)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>🔄 Customer 360 Context</span>
+          {isChronicallyFrustrated && <span className="badge badge-red" style={{ fontSize: '0.65rem' }}>High Friction Account</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text2)', marginRight: 4 }}>Sentiment Trend:</span>
+          {history.map(t => (
+            <span key={t.id} title={`${new Date(t.created_at).toLocaleDateString()}: ${t.emotion_type}`} style={{ fontSize: '1rem', cursor: 'help' }}>
+              {EMO[t.emotion_type] || '😐'}
+            </span>
+          ))}
+          <span style={{ fontSize: '1rem', marginLeft: 4 }}>→ Now</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {history.slice(-3).reverse().map(t => (
+          <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text2)' }}>
+            <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>
+              <span style={{ opacity: 0.6 }}>{new Date(t.created_at).toLocaleDateString()}</span> • {t.subject}
+            </div>
+            <span className={`badge ${t.status === 'resolved' ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
+              {t.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function TicketModal({ ticket: t, onClose, onUpdate }) {
   const [draft, setDraft] = useState(t.ai_draft_reply || '')
   const [loading, setLoading] = useState(false)
@@ -63,8 +117,8 @@ function TicketModal({ ticket: t, onClose, onUpdate }) {
               <span className={`badge ${urgencyClass(t.urgency_score)}`}>{urgencyLabel(t.urgency_score)} · {t.urgency_score?.toFixed(0)}</span>
               <span className={`emo-badge emo-${t.emotion_type}`}>{EMO[t.emotion_type]||'😐'} {t.emotion_type} {t.emotion_score?.toFixed(1)}/10</span>
               {t.is_churn_risk && <span className="badge badge-red">⚠ Churn Risk</span>}
-              {t.requires_human && <span className="badge badge-amber">👤 Human Required</span>}
               {t.is_escalated && <span className="badge badge-amber">🔺 Escalated</span>}
+              {t.source && <span className="badge badge-gray" style={{opacity:0.8}}>📥 {t.source}</span>}
               <span className={`tier-${t.customer_tier}`}>{t.customer_tier?.toUpperCase()}</span>
             </div>
           </div>
@@ -90,6 +144,11 @@ function TicketModal({ ticket: t, onClose, onUpdate }) {
         <div className="form-group">
           <label className="form-label">Customer Message</label>
           <div style={{ background:'var(--bg4)', border:'1px solid var(--border)', borderRadius:8, padding:'12px 14px', fontSize:'0.85rem', color:'var(--text2)', lineHeight:1.65, maxHeight:130, overflowY:'auto' }}>{t.description}</div>
+        </div>
+
+        {/* Customer 360 Panel */}
+        <div style={{ marginBottom: 14 }}>
+          <Customer360 email={t.customer_email} currentTicketId={t.id} />
         </div>
 
         {/* Metadata */}
@@ -176,27 +235,53 @@ function TicketModal({ ticket: t, onClose, onUpdate }) {
 export default function AgentView() {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [selected, setSelected] = useState(null)
   const [filter, setFilter] = useState('open')
   const [sortBy, setSortBy] = useState('urgency_score')
+  const [source, setSource] = useState('all')
 
   const load = useCallback(async () => {
-    const p = { sort_by: sortBy, limit: 60 }
+    const p = { sort_by: sortBy, limit: 200 }
     if (filter !== 'all') p.status = filter
-    const r = await getTickets(p)
-    setTickets(r.data)
-    setLoading(false)
-  }, [filter, sortBy])
+    if (source !== 'all') p.source = source
+    try {
+      const r = await getTickets(p)
+      setTickets(r.data || [])
+      setLoadError(null)
+    } catch (e) {
+      setLoadError('Could not load tickets — is the backend running?')
+    } finally {
+      setLoading(false)
+    }
+  }, [filter, sortBy, source])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { const t = setInterval(load, 15000); return ()=>clearInterval(t) }, [load])
+
 
   const churn = tickets.filter(t=>t.is_churn_risk).length
   const esc = tickets.filter(t=>t.is_escalated).length
   const p1 = tickets.filter(t=>t.severity==='P1').length
   const breach = tickets.filter(t=>t.sla_breached).length
 
+  if (loading) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh', flexDirection:'column', gap:14 }}>
+      <div className="spinner" style={{ width:36, height:36 }} />
+      <div style={{ color:'var(--text3)', fontSize:'0.85rem' }}>Loading tickets…</div>
+    </div>
+  )
+
+  if (loadError) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh', flexDirection:'column', gap:14 }}>
+      <div style={{ fontSize:'2rem' }}>⚠️</div>
+      <div style={{ color:'var(--red)', fontWeight:600 }}>{loadError}</div>
+      <button className="btn btn-secondary" onClick={load}>⟳ Retry</button>
+    </div>
+  )
+
   return (
+
     <>
       <div className="page-header">
         <div>
@@ -208,6 +293,15 @@ export default function AgentView() {
             <option value="open">Open</option>
             <option value="in_progress">In Progress</option>
             <option value="all">All</option>
+          </select>
+          <select className="select" style={{width:160}} value={source} onChange={e=>setSource(e.target.value)}>
+            <option value="all">All Sources</option>
+            <option value="web">Web Form</option>
+            <option value="voice">Voice</option>
+            <option value="apple_appstore">App Store (Apple)</option>
+            <option value="google_play">Google Play</option>
+            <option value="reddit">Reddit</option>
+            <option value="email">Email</option>
           </select>
           <select className="select" style={{width:150}} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
             <option value="urgency_score">By Urgency</option>

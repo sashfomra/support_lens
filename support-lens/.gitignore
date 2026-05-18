@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+env/
+.venv/
+*.egg
+
+# Database / local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables — NEVER commit secrets
+backend/.env
+frontend/.env
+
+# Chroma vector store (can be rebuilt via ingest_docs.py)
+backend/chroma_db/
+
+# Whisper model cache
+backend/whisper_cache/
+~/.cache/whisper/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temp / demo artifacts
+send_samples.py
+demo_voice_ticket.wav
+*.wav
